@@ -9,6 +9,28 @@ import streamlit.components.v1 as components
 # Page config FIRST (prevents warnings)
 # -----------------------------
 st.set_page_config(layout="wide", page_title="Netcore Personalization Demo")
+st.markdown("""
+<style>
+/* Keep normal flow, just place sidebar on the right */
+div[data-testid="stAppViewContainer"] { display:flex; flex-direction: row; }
+section[data-testid="stSidebar"] { order: 2; border-left: 1px solid #eee; border-right: 0; }
+div[data-testid="stMain"] { order: 1; }
+
+/* Fix the collapse/expand slide so it moves off the RIGHT side */
+section[data-testid="stSidebar"][aria-expanded="true"]  { transform: translateX(0) !important; }
+section[data-testid="stSidebar"][aria-expanded="false"] { transform: translateX(100%) !important; }
+
+/* Nice shadow when open on narrow screens */
+@media (max-width: 992px) {
+  section[data-testid="stSidebar"][aria-expanded="true"] { box-shadow: -2px 0 12px rgba(0,0,0,0.12); }
+}
+
+/* Tidy spacing */
+section[data-testid="stSidebar"] > div { padding-left: 1rem; padding-right: .5rem; }
+</style>
+""", unsafe_allow_html=True)
+
+
 
 # ---- GLOBAL CSS FIXES ----
 st.markdown("""
@@ -35,41 +57,26 @@ if "pred" not in st.session_state:
 if "modal_product" not in st.session_state:
     st.session_state.modal_product = None
 
-# -----------------------------
-# 1) TOP COLLAPSIBLE ANALYTICS
-# -----------------------------
-with st.expander("📊 Store Analytics (click to expand/collapse)", expanded=True):
-    c1, c2, c3, c4, c5 = st.columns([1.2,1,1,1,1])
-    with c1:
-        st.metric("Session Time", f"{int(time.time()%300)}s")
-    with c2:
-        st.metric("Scroll %", "65%")
-    with c3:
-        st.metric("Page Views", "1")
-    with c4:
-        st.metric("Location", "New York, US")
-    with c5:
-        st.metric("Weather", "20.2°C")
-
-st.markdown("---")
 
 # -----------------------------
 # 2) MOCK CATALOG (your images preserved)
 # -----------------------------
 def items(cat, base_price, styles, discounted_idx, imgs):
-    out=[]
-    for i in range(8):  # you set 8; keep as-is
+    out = []
+    n = 8  # fixed number of products per category
+    for i in range(n):
         style = styles[i % len(styles)]
         img = imgs[i] if i < len(imgs) else f"https://placehold.co/260x320?text={cat}%0A{style}%20#{i+1}"
         out.append({
             "name": f"{style} {cat[:-1]} #{i+1}",
             "category": cat,
-            "price": round(base_price + (i%5)*7.0, 2),
+            "price": round(base_price + (i % 5) * 7.0, 2),
             "discount": i in discounted_idx,
             "style": style,
             "img": img
         })
     return out
+
 
 # ----- YOUR IMAGE LISTS (unchanged) -----
 DRESSES_IMGS = [
@@ -103,7 +110,7 @@ BOTTOMS_IMGS = [
     "https://imageaws.netcoresmartech.com/images/netcoredemoboxx/Screenshot%202025-10-18%20at%2051946%E2%80%AFPM-22103.png",
 ]
 
-DRESSES = items("Dresses", 49.0, ["Solid","Printed","Lace"], {0,2,5,7,9}, DRESSES_IMGS)
+DRESSES = items("Dress", 49.0, ["Solid","Printed","Lace"], {0,2,5,7,9}, DRESSES_IMGS)
 TOPS    = items("Tops",    29.0, ["Solid","Printed","Striped"], {1,3,6,8,10}, TOPS_IMGS)
 BOTTOMS = items("Bottoms", 39.0, ["Denim","Solid","Printed"], {0,4,7,11}, BOTTOMS_IMGS)
 CATALOG = [("👗 Dresses", DRESSES), ("👚 Tops", TOPS), ("👖 Bottoms", BOTTOMS)]
@@ -112,26 +119,48 @@ CATALOG = [("👗 Dresses", DRESSES), ("👚 Tops", TOPS), ("👖 Bottoms", BOTT
 # 3) RIGHT SIDEBAR — PREDICTIONS
 # -----------------------------
 with st.sidebar:
-    st.header("🔮 Prediction Widget")
+    st.header("📊 Session & Predictions")
+
+    # --- Store analytics (mocked for now) ---
+    st.write("**Dwell Time:**", f"{int(time.time() % 300)}s")
+    st.write("**Scroll %:**", "65%")
+    st.write("**Location:**", "New York, US")
+    st.write("**Weather:**", "20.2°C")
+
+    st.markdown("---")
+    st.subheader("🔮 Realtime Profile")
+
+    # compute predictions from clicks
     if st.session_state.clicks:
-        cat_counter = Counter([p["category"] for p in st.session_state.clicks])
+        cat_counter   = Counter([p["category"] for p in st.session_state.clicks])
         style_counter = Counter([p["style"] for p in st.session_state.clicks])
-        top_cat, _ = cat_counter.most_common(1)[0]
-        top_style, _ = style_counter.most_common(1)[0]
-        disc_rate = sum(1 for p in st.session_state.clicks if p["discount"]) / len(st.session_state.clicks)
-        disc_aff = "High" if disc_rate >= 0.5 else "Low"
-        st.session_state.pred = {"Category": top_cat, "Discount Affinity": disc_aff, "Style": top_style}
+        type_counter  = Counter([p.get("type","") for p in st.session_state.clicks])
+        top_cat, _    = cat_counter.most_common(1)[0]
+        top_style, _  = style_counter.most_common(1)[0]
+        top_type, _   = type_counter.most_common(1)[0]
+        disc_rate     = sum(1 for p in st.session_state.clicks if p["discount"]) / len(st.session_state.clicks)
+        disc_aff      = "High" if disc_rate >= 0.5 else "Low"
+        st.session_state.pred = {
+            "Category": top_cat,
+            "Style": top_style,
+            "Type": top_type or "-",
+            "Discount Affinity": disc_aff
+        }
 
-    for k, v in st.session_state.pred.items():
-        st.write(f"**{k}:** {v}")
+    for k in ["Category","Style","Type","Discount Affinity"]:
+        st.write(f"**{k}:** {st.session_state.pred.get(k,'-')}")
 
-    st.divider()
-    st.caption("Latest clicks")
-    if st.session_state.clicks:
-        for p in st.session_state.clicks[-5:][::-1]:
-            st.write(f"• {p['name']} (${p['price']}{' — SALE' if p['discount'] else ''})")
-    else:
-        st.write("_No interactions yet_")
+    st.markdown("---")
+    st.subheader("📝 Recent events")
+    # scrollable recent events list
+    with st.container(height=220, border=True):
+        if st.session_state.clicks:
+            for p in st.session_state.clicks[-30:][::-1]:
+                sale = " • SALE" if p["discount"] else ""
+                st.write(f"- {p['category']} / {p.get('type','-')} / {p['style']} • ${p['price']}{sale}")
+        else:
+            st.caption("No interactions yet")
+
 
 # -----------------------------
 # Helper: Version-agnostic Quick View
@@ -210,16 +239,29 @@ st.markdown("---")
 # -----------------------------
 BRAND_LOGO_URL = "https://upload.wikimedia.org/wikipedia/commons/thumb/6/61/Netcore_Cloud_logo.svg/512px-Netcore_Cloud_logo.svg.png"
 
-def render_email_html(logo_url, pred, recs):
+def render_email_html(logo_url, hero_url, footer_url, pred, recs):
     cards = "".join([
         f"""
         <td style="padding:10px; text-align:center;">
           <img src="{p['img']}" width="160" style="border-radius:8px; display:block; margin:0 auto 8px;" />
           <div style="font:600 14px/1.2 Arial;color:#111">{p['name']}</div>
+          <div style="font:12px Arial;color:#666">{p.get('type','-')} • {p['style']}</div>
           <div style="font:14px Arial;color:#444">${p['price']}{' <span style="color:#10b981;">(SALE)</span>' if p['discount'] else ''}</div>
         </td>
         """ for p in recs
     ])
+    hero_block = f"""
+      <tr><td style="padding:8px 24px 0; text-align:center;">
+        <img src="{hero_url}" width="592" style="width:100%; max-width:592px; border-radius:12px;" alt="Hero"/>
+      </td></tr>
+    """ if hero_url else ""
+
+    footer_block = f"""
+      <tr><td style="padding:0 24px 24px; text-align:center;">
+        <img src="{footer_url}" width="592" style="width:100%; max-width:592px; border-radius:12px;" alt="Footer"/>
+      </td></tr>
+    """ if footer_url else ""
+
     return f"""
     <table width="100%" cellpadding="0" cellspacing="0" style="background:#f7f7f7; padding:24px;">
       <tr><td align="center">
@@ -227,37 +269,49 @@ def render_email_html(logo_url, pred, recs):
           <tr><td style="padding:24px 24px 0; text-align:center;">
             <img src="{logo_url}" height="36" alt="Brand" />
           </td></tr>
+          {hero_block}
           <tr><td style="padding:16px 24px 0; font:700 22px Arial; color:#111; text-align:center;">
             Picks we made just for you — more {pred['Style'].lower()} {pred['Category'].lower()}
           </td></tr>
           <tr><td style="padding:8px 24px 0; font:16px Arial; color:#333; text-align:center;">
-            We noticed you liked {pred['Style'].lower()} styles in {pred['Category'].lower()} ({'on sale' if pred['Discount Affinity']=='High' else 'regular priced'}). Here are a few you might love:
+            We noticed you liked {pred['Style'].lower()} {pred['Type'].lower() if pred.get('Type') and pred['Type']!='-' else 'styles'} in {pred['Category'].lower()} ({'on sale' if pred['Discount Affinity']=='High' else 'regular priced'}).
           </td></tr>
           <tr><td style="padding:16px 8px 24px;">
             <table align="center" cellpadding="0" cellspacing="0"><tr>
               {cards}
             </tr></table>
           </td></tr>
+          {footer_block}
         </table>
       </td></tr>
     </table>
     """
 
+
+BRAND_LOGO_URL = "https://upload.wikimedia.org/wikipedia/commons/thumb/6/61/Netcore_Cloud_logo.svg/512px-Netcore_Cloud_logo.svg.png"
+HERO_PH        = "https://imageaws.netcoresmartech.com/images/netcoredemoboxx/Screenshot%202025-10-27%20at%2081843%E2%80%AFPM-15335.png"
+FOOTER_PH      = "https://imageaws.netcoresmartech.com/images/netcoredemoboxx/Screenshot%202025-10-27%20at%2081950%E2%80%AFPM-15353.png"
+
 st.subheader("✉️ Personalized Email")
-brand_logo = st.text_input("Brand logo URL", value=BRAND_LOGO_URL)
+logo_url  = st.text_input("Brand logo URL", value=BRAND_LOGO_URL)
+hero_url  = st.text_input("Hero image URL (optional)", value=HERO_PH)
+footer_url= st.text_input("Footer image URL (optional)", value=FOOTER_PH)
 
-if st.button("Show Personalized Email Preview"):
-        # ✅ ensure any Quick View modal is closed before rendering email
-    st.session_state.modal_product = None
+# Close modal BEFORE render to avoid Quick View popping
+def close_modal(): st.session_state.modal_product = None
+email_btn = st.button("Show Personalized Email Preview", on_click=close_modal)
 
+if email_btn:
     pred = st.session_state.pred
     if pred["Category"] == "-":
         st.info("Browse a few items first to personalize the email.")
     else:
-        pool = [p for _, lst in CATALOG for p in lst if p["category"] == pred["Category"]]
+        pool   = [p for _, lst in CATALOG for p in lst if p["category"] == pred["Category"]]
         styled = [p for p in pool if pred['Style'] in p['style']]
-        recs = (styled or pool)[:3]
-        html = render_email_html(brand_logo or BRAND_LOGO_URL, pred, recs)
-        components.html(html, height=520, scrolling=True)
-        st.download_button("⬇️ Download email.html", data=html, file_name="email.html", mime="text/html")
-st.markdown("---")
+        typed  = [p for p in (styled or pool) if p.get("type","") == pred.get("Type","")]
+        recs   = (typed or styled or pool)[:3]
+
+        html = render_email_html(logo_url or BRAND_LOGO_URL, hero_url, footer_url, pred, recs)
+        components.html(html, height=680, scrolling=True)
+
+
